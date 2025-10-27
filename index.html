@@ -1,0 +1,620 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Pathfinder 2E Point Buy Calculator</title>
+<style>
+  :root {
+    --bg: #f9fafb;
+    --text: #0f172a;
+    --card-bg: #fff;
+    --border: #cbd5e1;
+    --header-bg: #f1f5f9;
+    --accent: #60a5fa;
+    --accent-hover: #3b82f6;
+    --success-bg: #d1fae5;
+    --success-border: #10b981;
+    --success-text: #047857;
+    --error-bg: #fee2e2;
+    --error-border: #ef4444;
+    --error-text: #b91c1c;
+    --inactive-bg: #e5e7eb;
+    --inactive-text: #9ca3af;
+    --total-bg: #e2e8f0;
+  }
+
+  body.dark-mode {
+  --bg: #0f172a;
+  --text: #f1f5f9;
+  --card-bg: #1e293b;
+  --border: #334155;
+  --header-bg: #334155;
+  --accent: #3b82f6;
+  --accent-hover: #2563eb;
+  --success-bg: #065f46;
+  --success-border: #10b981;
+  --success-text: #bbf7d0;
+  --error-bg: #7f1d1d;
+  --error-border: #ef4444;
+  --error-text: #fecaca;
+  --inactive-bg: #273549; /* <-- CHANGED from #1e293b */
+  --inactive-text: #64748b; /* slightly brighter for contrast */
+  --total-bg: #1e293b;
+}
+
+  body {
+    font-family: system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin-top: 40px;
+    transition: background 0.3s, color 0.3s;
+  }
+
+  h1 { font-weight: 500; }
+
+  .dark-toggle {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 20px;
+    padding: 6px 12px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: background 0.2s;
+  }
+  .dark-toggle:hover { background: var(--accent-hover); }
+
+  .grid {
+    display: grid;
+    grid-template-columns: 100px repeat(4, 60px) 60px;
+    gap: 6px;
+    margin-top: 20px;
+  }
+
+  .label, .cell, .total, .col-header, select {
+    height: 60px;
+    border-radius: 8px;
+    background: var(--card-bg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 2px solid var(--border);
+    transition: all 0.15s;
+    user-select: none;
+    color: var(--text);
+  }
+
+  .col-header { background: var(--header-bg); font-weight: 700; }
+  .label { background: var(--header-bg); font-weight: 600; }
+
+  .cell {
+    width: 60px;
+    cursor: pointer;
+    font-size: 26px;
+    font-weight: bold;
+  }
+  .cell.checked {
+    background: var(--success-bg);
+    border-color: var(--success-border);
+    color: var(--success-text);
+  }
+  .cell.crossed {
+    background: var(--error-bg);
+    border-color: var(--error-border);
+    color: var(--error-text);
+  }
+  .cell.inactive {
+  background: var(--inactive-bg);
+  border-color: #475569; /* slightly lighter border for dark mode clarity */
+  color: var(--inactive-text);
+  cursor: not-allowed;
+}
+  .cell:hover:not(.inactive):not(.checked):not(.crossed) {
+    background: #e2e8f0;
+  }
+
+  .total {
+    background: var(--total-bg);
+    font-weight: bold;
+    font-size: 18px;
+    border-color: var(--border);
+  }
+
+  .dropdown-row {
+    display: grid;
+    grid-template-columns: 100px repeat(4, 60px) 60px;
+    gap: 6px;
+  }
+
+  select {
+    width: 100%;
+    height: 40px;
+    font-size: 14px;
+    border-radius: 8px;
+    padding: 0 4px;
+    background: var(--card-bg);
+    color: var(--text);
+    border: 2px solid var(--border);
+  }
+  select:focus { outline: 2px solid var(--accent); }
+
+  .notes-box {
+    width: 100%;
+    max-width: 100%;
+    height: 190px;
+    font-family: system-ui, sans-serif;
+    font-size: 14px;
+    line-height: 1.4;
+    border: 2px solid var(--border);
+    border-radius: 8px;
+    padding: 10px;
+    background: var(--card-bg);
+    overflow-y: auto;
+    white-space: pre-wrap;
+    user-select: text;
+    margin-top: 16px;
+    color: var(--text);
+  }
+</style>
+</head>
+<body>
+  <button id="darkToggle" class="dark-toggle">🌙 Dark Mode</button>
+  <h1>Pathfinder 2E Point Buy Calculator</h1>
+
+  <div class="dropdown-row" id="dropdowns"><div></div></div>
+  <div class="grid" id="grid"></div>
+
+  <div class="buttons">
+    <button id="reset">Reset All</button>
+    <button id="random">Random</button>
+  </div>
+
+  <div id="notes" class="notes-box">
+    Hi, thank you for checking out my program. If there are bugs, you can let me know; otherwise I hope you enjoy using this calculator.
+  </div>
+
+<script>
+const rowLabels = ["STR", "DEX", "CON", "INT", "WIS", "CHA"];
+const colLabels = ["Class", "Ancs.", "Backg.", "Free"];
+const gridData = Array.from({ length: 6 }, () => Array(colLabels.length).fill(0));
+const gridElement = document.getElementById("grid");
+const dropdownContainer = document.getElementById("dropdowns");
+
+const presets = {
+  "Class": {
+    "Custom": [],
+    "Alchemist": ["INT"], "Animist": ["WIS"], "Barbarian": ["STR"],
+    "Bard": ["CHA"], "Champion": ["STR","DEX"], "Cleric": ["WIS"],
+    "Commander": ["INT"], "Druid": ["WIS"],
+    "Fighter": ["STR","DEX"], "Guardian": ["STR"], 
+    "Investigator": ["INT"], "Kineticist": ["CON"],
+    "Magus": ["STR","DEX"], "Monk": ["STR","DEX"], "Oracle": ["CHA"],
+    "Psychic": ["INT","CHA"], "Ranger": ["STR","DEX"],
+    "Rogue": ["STR","DEX","CON","INT","WIS","CHA"],
+    "Sorcerer": ["CHA"], "Summoner": ["CHA"], "Swashbuckler": ["DEX"],
+    "Thaumaturge": ["CHA"], "Witch": ["INT"], "Wizard": ["INT"], 
+    "Gunslinger": ["DEX"], "Inventor": ["INT"], "Exemplar": ["STR","DEX"],
+  },
+  "Ancs.": {
+    "Custom": [],
+	"Dwarf": ["INT", "WIS"], 
+	"Elf": [],
+	"Gnome": [],
+	"Goblin": [],
+	"Halfling": [], 
+    "Human": [],
+    "Leshy": [], 
+    "Orc": [],
+    "Athamaru": [], 
+	"Azarketi": [], 
+	"Catfolk": [],
+    "Centaur": [],
+"Fetchling": [],
+"Hobgoblin": [],
+"Kholo": [],
+"Kitsune": [],
+"Kobold": [],
+"Lizardfolk": [],
+"Merfolk": [],
+"Minotaur": [],
+"Nagaji": [],
+"Ratfolk": [],
+"Samsaran": [],
+"Tanuki": [],
+"Tengu": [],
+"Tripkee": [],
+"Vanara": [],
+"Wayang": [],
+    "Anadi": [],
+    "Android": [],
+    "Automaton": [],
+"Awakened Animal": [],
+"Conrasu": [],
+"Fleshwarp": [],
+"Ghoran": [],
+"Goloma": [],
+"Jotunborn": [],
+"Kashrishi": [],
+"Poppet": [],
+"Sarangay": [],
+"Shisk": [],
+"Shoony": [],
+"Skeleton": [],
+"Sprite": [],
+"Strix": [],
+"Surki": [],
+"Vishkanya": [],
+"Yaksha": [],
+"Yaoguai": [],
+  }
+};
+
+let activeClassChoices = [];
+let currentClassSelection = "Custom";
+
+function createDropdowns() {
+  colLabels.forEach(label => {
+    if (label === "Backg." || label === "Free") {
+      const placeholder = document.createElement("div");
+      dropdownContainer.appendChild(placeholder);
+      return;
+    }
+
+    const select = document.createElement("select");
+    Object.keys(presets[label]).forEach(opt => {
+      if (opt === "Gunslinger") {
+        const sep = document.createElement("option");
+        sep.textContent = "UNCOMMON CLASSES";
+        sep.disabled = true;
+        sep.style.fontWeight = "bold";
+        select.appendChild(sep);
+      }
+      if (opt === "Exemplar") {
+        const sep = document.createElement("option");
+        sep.textContent = "RARE CLASSES";
+        sep.disabled = true;
+        sep.style.fontWeight = "bold";
+        select.appendChild(sep);
+      }
+      if (opt === "Dwarf") {
+        const sep = document.createElement("option");
+        sep.textContent = "COMMON ANCESTRIES";
+        sep.disabled = true;
+        sep.style.fontWeight = "bold";
+        select.appendChild(sep);
+      }
+      if (opt === "Athamaru") {
+        const sep = document.createElement("option");
+        sep.textContent = "UNCOMMON ANCESTRIES";
+        sep.disabled = true;
+        sep.style.fontWeight = "bold";
+        select.appendChild(sep);
+      }
+      if (opt === "Anadi") {
+        const sep = document.createElement("option");
+        sep.textContent = "RARE ANCESTRIES";
+        sep.disabled = true;
+        sep.style.fontWeight = "bold";
+        select.appendChild(sep);
+      }
+
+      const option = document.createElement("option");
+      option.value = opt;
+      option.textContent = opt;
+
+      const orange = [
+        "Gunslinger", "Inventor", "Athamaru", "Azarketi", "Catfolk", "Centaur", "Fetchling", "Hobgoblin",
+        "Kholo", "Kitsune", "Kobold", "Lizardfolk", "Merfolk", "Minotaur", "Nagaji", "Ratfolk", "Samsaran",
+        "Tanuki", "Tengu", "Tripkee", "Vanara", "Wayang"
+      ];
+      const blue = ["Exemplar", "Anadi", "Android", "Automaton", "Awakened Animal", "Conrasu", "Fleshwarp",
+        "Ghoran", "Goloma", "Jotunborn", "Kashrishi", "Poppet", "Sarangay", "Shisk", "Shoony", "Skeleton",
+        "Sprite", "Strix", "Surki", "Vishkanya", "Yaksha", "Yaoguai"];
+
+      if (orange.includes(opt)) option.style.color = "#FF8F00";
+      if (blue.includes(opt)) option.style.color = "#1565C0";
+
+      select.appendChild(option);
+    });
+
+    select.addEventListener("change", e => applyPreset(label, e.target.value));
+    dropdownContainer.appendChild(select);
+  });
+
+  const placeholder = document.createElement("div");
+  dropdownContainer.appendChild(placeholder);
+}
+
+function renderGrid() {
+  gridElement.innerHTML = "";
+  gridElement.style.gridTemplateColumns = "100px repeat(4, 60px) 60px";
+
+  gridElement.appendChild(document.createElement("div")); 
+  colLabels.forEach(c => {
+    const header = document.createElement("div");
+    header.className = "col-header";
+    header.textContent = c;
+    gridElement.appendChild(header);
+  });
+  const totalHeader = document.createElement("div");
+  totalHeader.className = "col-header";
+  totalHeader.textContent = "Total";
+  gridElement.appendChild(totalHeader);
+
+  const freeIndex = colLabels.indexOf("Free");
+  const bgIndex = colLabels.indexOf("Backg.");
+  const classIndex = colLabels.indexOf("Class");
+
+  const freeChecks = countChecks(freeIndex);
+  const bgChecks = countChecks(bgIndex);
+  const classChecks = countChecks(classIndex);
+
+  rowLabels.forEach((rowLabel, r) => {
+    const labelCell = document.createElement("div");
+    labelCell.className = "label";
+    labelCell.textContent = rowLabel;
+    gridElement.appendChild(labelCell);
+
+    colLabels.forEach((_, c) => {
+      const cell = document.createElement("div");
+      cell.className = "cell";
+
+      let inactive = false;
+
+      // Free column cap (4 max)
+      if (c === freeIndex && freeChecks >= 4 && gridData[r][c] === 0) inactive = true;
+      // Background column cap (2 max)
+      if (c === bgIndex && bgChecks >= 2 && gridData[r][c] === 0) inactive = true;
+      // Class restriction logic
+      if (c === classIndex && currentClassSelection !== "Custom") {
+        const allowed = presets["Class"][currentClassSelection] || [];
+        if (!allowed.includes(rowLabel)) inactive = true;
+        // If one valid stat already selected, lock others
+        if (allowed.length > 1 && classChecks >= 1 && gridData[r][c] === 0 && allowed.includes(rowLabel)) {
+          inactive = true;
+        }
+      }
+
+      if (inactive) cell.classList.add("inactive");
+
+      if (gridData[r][c] === 1) {
+        cell.textContent = "✔️";
+        cell.classList.add("checked");
+      } else if (gridData[r][c] === -1) {
+        cell.textContent = "❌";
+        cell.classList.add("crossed");
+      } else {
+        cell.textContent = "";
+      }
+
+      cell.addEventListener("click", () => {
+        if (!cell.classList.contains("inactive")) toggleCell(r, c, cell);
+      });
+
+      gridElement.appendChild(cell);
+    });
+
+    const totalCell = document.createElement("div");
+    totalCell.className = "total";
+    const totalPoints = gridData[r].reduce((sum, val) => sum + (val * 2), 10);
+    totalCell.textContent = totalPoints;
+    gridElement.appendChild(totalCell);
+  });
+}
+
+function countChecks(colIndex) {
+  let count = 0;
+  for (let r = 0; r < rowLabels.length; r++) {
+    if (gridData[r][colIndex] === 1) count++;
+  }
+  return count;
+}
+
+function toggleCell(r, c) {
+  if (gridData[r][c] === 0) gridData[r][c] = 1;
+  else if (gridData[r][c] === 1) gridData[r][c] = -1;
+  else gridData[r][c] = 0;
+  renderGrid();
+}
+
+const ancestryBonuses = {
+  "Dwarf":  { boosts: ["CON", "WIS"], flaw: "CHA" },
+  "Elf":    { boosts: ["DEX", "INT"], flaw: "CON" },
+  "Gnome":  { boosts: ["CON", "CHA"], flaw: "STR" },
+  "Goblin": { boosts: ["DEX", "CHA"], flaw: "WIS" },
+  "Human": { boosts: [], flaw: null }, //Two free boosts, handled by front end
+  "Halfling": { boosts: ["DEX", "WIS"], flaw: "STR" },
+  "Leshy":      { boosts: ["CON", "WIS"], flaw: "INT" },
+  "Orc":        { boosts: [], flaw: null }, // Two free boosts, handled by front end again
+  "Athamaru":   { boosts: ["STR", "WIS"], flaw: "INT" },
+  "Azarketi":   { boosts: ["CON", "CHA"], flaw: "WIS" },
+  "Catfolk":     { boosts: ["DEX", "CHA"], flaw: "WIS" },
+  "Centaur":     { boosts: ["STR", "WIS"], flaw: "CHA" },
+  "Fetchling":   { boosts: ["DEX"], flaw: null },
+  "Hobgoblin":   { boosts: ["CON", "INT"], flaw: "WIS" },
+  "Kholo":       { boosts: ["STR", "INT"], flaw: "WIS" },
+  "Kitsune":     { boosts: ["CHA"], flaw: null },
+  "Kobold":      { boosts: ["DEX", "CHA"], flaw: "CON" },
+  "Lizardfolk":  { boosts: ["STR", "WIS"], flaw: "INT" },
+  "Merfolk":     { boosts: ["DEX", "CHA"], flaw: "CON" },
+  "Minotaur":    { boosts: ["STR", "CON"], flaw: "CHA" },
+  "Nagaji":      { boosts: ["STR"], flaw: null },
+  "Ratfolk":     { boosts: ["DEX", "INT"], flaw: "STR" },
+  "Samsaran":    { boosts: ["CON", "WIS"], flaw: "CHA" },
+  "Tanuki":      { boosts: ["CON", "CHA"], flaw: "WIS" },
+  "Tengu":       { boosts: ["DEX"], flaw: null },
+  "Tripkee":     { boosts: ["DEX", "WIS"], flaw: "STR" },
+  "Vanara":      { boosts: ["DEX"], flaw: null },
+  "Wayang":      { boosts: ["DEX", "CHA"], flaw: "CON" },
+  "Anadi":       { boosts: ["DEX", "WIS"], flaw: "CON" },
+  "Android":     { boosts: ["DEX", "INT"], flaw: "CHA" },
+  "Automaton":   { boosts: ["STR"], flaw: null },
+  "Awakened Animal": { boosts: ["CON", "WIS"], flaw: "INT" },
+  "Conrasu":     { boosts: ["CON", "WIS"], flaw: "CHA" },
+  "Fleshwarp":   { boosts: ["CON"], flaw: null },
+  "Ghoran":      { boosts: ["CON"], flaw: null },
+  "Goloma":      { boosts: ["WIS"], flaw: null },
+  "Jotunborn":   { boosts: ["STR", "WIS"], flaw: "CHA" },
+  "Kashrishi":   { boosts: ["CON"], flaw: null },
+  "Poppet":      { boosts: ["CON", "CHA"], flaw: "DEX" },
+  "Sarangay":    { boosts: ["STR", "CHA"], flaw: "WIS" },
+  "Shisk":       { boosts: ["INT"], flaw: null },
+  "Shoony":      { boosts: ["DEX", "CHA"], flaw: "CON" },
+  "Skeleton":    { boosts: ["DEX", "CHA"], flaw: "INT" },
+  "Sprite":      { boosts: ["DEX", "INT"], flaw: "STR" },
+  "Strix":       { boosts: ["DEX"], flaw: null },
+  "Surki":       { boosts: ["CON"], flaw: null },
+  "Vishkanya":   { boosts: ["DEX"], flaw: null },
+  "Yaksha":      { boosts: ["CON", "CHA"], flaw: "INT" },
+  "Yaoguai":     { boosts: ["CHA", "CON"], flaw: "INT" },
+  // Add as many as you like...
+};
+
+function applyPreset(columnName, presetName) {
+  const colIndex = colLabels.indexOf(columnName);
+  if (colIndex === -1) return;
+
+  // Reset this column’s grid data
+  for (let r = 0; r < rowLabels.length; r++) gridData[r][colIndex] = 0;
+
+  // Handle CLASS presets
+  if (columnName === "Class") {
+    currentClassSelection = presetName;
+    activeClassChoices = presets["Class"][presetName] || [];
+    if (activeClassChoices.length === 1) {
+      const rowIndex = rowLabels.indexOf(activeClassChoices[0]);
+      if (rowIndex !== -1) gridData[rowIndex][colIndex] = 1;
+    }
+  }
+
+  // Handle ANCESTRY bonuses and flaws (data-driven)
+  if (columnName === "Ancs.") {
+    const bonus = ancestryBonuses[presetName];
+    if (bonus) {
+      bonus.boosts?.forEach(stat => {
+        const i = rowLabels.indexOf(stat);
+        if (i !== -1) gridData[i][colIndex] = 1;
+      });
+      if (bonus.flaw) {
+        const i = rowLabels.indexOf(bonus.flaw);
+        if (i !== -1) gridData[i][colIndex] = -1;
+      }
+    }
+  }
+
+  renderGrid();
+}
+
+function randomize() {
+  // 1️⃣ Pick a random Class and Ancestry
+  const classKeys = Object.keys(presets["Class"]).filter(k => k !== "Custom");
+  const ancsKeys = Object.keys(presets["Ancs."]).filter(k => k !== "Custom");
+  const randomClass = classKeys[Math.floor(Math.random() * classKeys.length)];
+  const randomAncs = ancsKeys[Math.floor(Math.random() * ancsKeys.length)];
+
+  // Set dropdowns to match
+  const selects = dropdownContainer.querySelectorAll("select");
+  selects[0].value = randomClass; // Class dropdown
+  selects[1].value = randomAncs;  // Ancs. dropdown
+
+  // Reset grid
+  for (let r = 0; r < rowLabels.length; r++) {
+    for (let c = 0; c < colLabels.length; c++) gridData[r][c] = 0;
+  }
+
+  // 2️⃣ Apply the class logic and mark legal cells
+  currentClassSelection = randomClass;
+  activeClassChoices = presets["Class"][randomClass] || [];
+
+  // If class has 1 legal stat → auto select it
+  if (activeClassChoices.length === 1) {
+    const rowIndex = rowLabels.indexOf(activeClassChoices[0]);
+    if (rowIndex !== -1) gridData[rowIndex][colLabels.indexOf("Class")] = 1;
+  }
+
+  // If class has 2+ legal stats → pick one randomly
+  if (activeClassChoices.length > 1) {
+    const randChoice = activeClassChoices[Math.floor(Math.random() * activeClassChoices.length)];
+    const rowIndex = rowLabels.indexOf(randChoice);
+    if (rowIndex !== -1) gridData[rowIndex][colLabels.indexOf("Class")] = 1;
+  }
+
+  // 3️⃣ Randomize background (2 unique)
+  const bgIndex = colLabels.indexOf("Backg.");
+  const bgRows = shuffle([...rowLabels]).slice(0, 2);
+  bgRows.forEach(row => {
+    const rowIndex = rowLabels.indexOf(row);
+    gridData[rowIndex][bgIndex] = 1;
+  });
+
+  // 4️⃣ Randomize Free (4 unique)
+  const freeIndex = colLabels.indexOf("Free");
+  const freeRows = shuffle([...rowLabels]).slice(0, 4);
+  freeRows.forEach(row => {
+    const rowIndex = rowLabels.indexOf(row);
+    gridData[rowIndex][freeIndex] = 1;
+  });
+
+  // 5️⃣ Re-render grid with correct greyouts
+  renderGrid();
+
+  // Update dropdowns to visually show the selection
+  selects[0].dispatchEvent(new Event("change"));
+  selects[1].dispatchEvent(new Event("change"));
+}
+
+// Helper to shuffle an array
+function shuffle(array) {
+  let currentIndex = array.length, randomIndex;
+  while (currentIndex !== 0) {
+    randomIndex = Math.floor(Math.random() * currentIndex);
+    currentIndex--;
+    [array[currentIndex], array[randomIndex]] = [array[randomIndex], array[currentIndex]];
+  }
+  return array;
+}
+
+document.getElementById("reset").addEventListener("click", () => {
+  // Reset the entire grid
+  for (let r = 0; r < rowLabels.length; r++) {
+    for (let c = 0; c < colLabels.length; c++) gridData[r][c] = 0;
+  }
+
+  // Reset selections
+  currentClassSelection = "Custom";
+
+  // Reset dropdowns to "Custom" and trigger their change events
+  dropdownContainer.querySelectorAll("select").forEach(select => {
+    select.value = "Custom";
+    select.dispatchEvent(new Event("change"));
+  });
+
+  renderGrid();
+});
+
+document.getElementById("random").addEventListener("click", randomize);
+
+// Dark mode toggle
+const darkToggle = document.getElementById("darkToggle");
+const body = document.body;
+if (localStorage.getItem("darkMode") === "true") body.classList.add("dark-mode");
+function updateDarkButton() {
+  darkToggle.textContent = body.classList.contains("dark-mode") ? "☀️ Light Mode" : "🌙 Dark Mode";
+}
+updateDarkButton();
+darkToggle.addEventListener("click", () => {
+  body.classList.toggle("dark-mode");
+  localStorage.setItem("darkMode", body.classList.contains("dark-mode"));
+  updateDarkButton();
+});
+
+createDropdowns();
+renderGrid();
+</script>
